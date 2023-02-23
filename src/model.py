@@ -23,18 +23,19 @@ from torch.autograd import Variable
 
 class InnerNode():
 
-    def __init__(self, depth, args):
-        self.args = args
-        self.fc = nn.Linear(self.args.input_dim, 1)
+    def __init__(self, depth):
+        self.fc = nn.Linear(28*28, 1)
         beta = torch.randn(1)
         #beta = beta.expand((self.args.batch_size, 1))
-        if self.args.cuda:
+        try:
             beta = beta.cuda()
+        except:
+            pass
         self.beta = nn.Parameter(beta)
         self.leaf = False
         self.prob = None
         self.leaf_accumulator = []
-        self.lmbda = self.args.lmbda * 2 ** (-depth)
+        self.lmbda = 0.1 * 2 ** (-depth)
         self.build_child(depth)
         self.penalties = []
 
@@ -45,12 +46,12 @@ class InnerNode():
         self.right.reset()
 
     def build_child(self, depth):
-        if depth < self.args.max_depth:
-            self.left = InnerNode(depth+1, self.args)
-            self.right = InnerNode(depth+1, self.args)
+        if depth < 8:
+            self.left = InnerNode(depth+1)
+            self.right = InnerNode(depth+1)
         else :
-            self.left = LeafNode(self.args)
-            self.right = LeafNode(self.args)
+            self.left = LeafNode()
+            self.right = LeafNode()
 
     def forward(self, x):
         return(F.sigmoid(self.beta*self.fc(x)))
@@ -83,11 +84,12 @@ class InnerNode():
 
 
 class LeafNode():
-    def __init__(self, args):
-        self.args = args
-        self.param = torch.randn(self.args.output_dim)
-        if self.args.cuda:
+    def __init__(self):
+        self.param = torch.randn(10)
+        try:
             self.param = self.param.cuda()
+        except:
+            pass
         self.param = nn.Parameter(self.param)
         self.leaf = True
         self.softmax = nn.Softmax()
@@ -101,33 +103,34 @@ class LeafNode():
     def cal_prob(self, x, path_prob):
         Q = self.forward()
         #Q = Q.expand((self.args.batch_size, self.args.output_dim))
-        Q = Q.expand((path_prob.size()[0], self.args.output_dim))
+        Q = Q.expand((path_prob.size()[0],10)
         return([[path_prob, Q]])
 
 
 class SoftDecisionTree(nn.Module):
 
-    def __init__(self, args):
+    def __init__(self):
         super(SoftDecisionTree, self).__init__()
-        self.args = args
-        self.root = InnerNode(1, self.args)
+        self.root = InnerNode(1)
         self.collect_parameters() ##collect parameters and modules under root node
-        self.optimizer = optim.SGD(self.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+        self.optimizer = optim.SGD(self.parameters(), lr=0.01, momentum=self.args.momentum)
         self.test_acc = []
-        self.define_extras(self.args.batch_size)
+        self.define_extras(64)
         self.best_accuracy = 0.0
 
     def define_extras(self, batch_size):
         ##define target_onehot and path_prob_init batch size, because these need to be defined according to batch size, which can be differ
-        self.target_onehot = torch.FloatTensor(batch_size, self.args.output_dim)
+        self.target_onehot = torch.FloatTensor(batch_size, 10)
         self.target_onehot = Variable(self.target_onehot)
         self.path_prob_init = Variable(torch.ones(batch_size, 1))
-        if self.args.cuda:
+        try:
             self.target_onehot = self.target_onehot.cuda()
             self.path_prob_init = self.path_prob_init.cuda()
+        except:
+             pass
     def forward(self, x):
         node = self.root
-        path_prob = Variable(torch.ones(self.args.batch_size, 1))
+        path_prob = Variable(torch.ones(64, 1))
         while not node.leaf:
             node, prob = node.select_next(x)
             path_prob *= prob
@@ -137,9 +140,9 @@ class SoftDecisionTree(nn.Module):
         leaf_accumulator = self.root.cal_prob(x, self.path_prob_init)
         loss = 0.
         max_prob = [-1. for _ in range(batch_size)]
-        max_Q = [torch.zeros(self.args.output_dim) for _ in range(batch_size)]
+        max_Q = [torch.zeros(10) for _ in range(batch_size)]
         for (path_prob, Q) in leaf_accumulator:
-            TQ = torch.bmm(y.view(batch_size, 1, self.args.output_dim), torch.log(Q).view(batch_size, self.args.output_dim, 1)).view(-1,1)
+            TQ = torch.bmm(y.view(batch_size, 1, 10), torch.log(Q).view(batch_size, 10, 1)).view(-1,1)
             loss += path_prob * TQ
             path_prob_numpy = path_prob.cpu().data.numpy().reshape(-1)
             for i in range(batch_size):
