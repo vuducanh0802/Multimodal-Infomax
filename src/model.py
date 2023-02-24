@@ -2,10 +2,29 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from SDT import SDT
+
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 from modules.encoders import LanguageEmbeddingLayer, CPC, MMILB, RNNEncoder, SubNet
 
 from transformers import BertModel, BertConfig
+
+
+import os
+import time
+
+import tensorflow as tf
+import numpy as np
+
+from functools import reduce
+
+from sklearn.metrics import accuracy_score
+
+import collections
+
+#evaluation
+from sklearn.metrics import confusion_matrix
+
 
 class MMIM(nn.Module):
     def __init__(self, hp):
@@ -89,7 +108,16 @@ class MMIM(nn.Module):
             n_class = hp.n_class,
             dropout = hp.dropout_prj
         )
-            
+
+        self.softdectree = SDT(
+            input_dim = 128,
+            output_dim = hp.n_class,
+            depth=5,
+            lamda=1e-3,
+            use_cuda=True
+        )
+        
+    
     def forward(self, sentences, visual, acoustic, v_len, a_len, bert_sent, bert_sent_type, bert_sent_mask, y=None, mem=None):
         """
         text, audio, and vision should have dimension [batch_size, seq_len, n_features]
@@ -115,8 +143,30 @@ class MMIM(nn.Module):
 
 
         # Linear proj and pred
+        
         fusion, preds = self.fusion_prj(torch.cat([text, acoustic, visual], dim=1))
+        pred = self.softdectree(fusion)
 
+
+#         print("-------------")
+#         print(fusion.shape, preds.shape)
+        # print(preds)
+#         print(text.shape, acoustic.shape, visual.shape)
+#         print(self.hp.d_aout, self.hp.d_vout, self.hp.d_tout)
+#         print("++++++++++++++")
+        # print(pred, pred.shape)
+#         total = 0
+#         for i in pred:
+#             total += i[0]
+
+#         print(total)
+
+#         print(torch.cat([text, acoustic, visual], dim=1).shape)
+
+
+        # print(fusion[0])
+        # print(fusion)
+        
         nce_t = self.cpc_zt(text, fusion)
         nce_v = self.cpc_zv(visual, fusion)
         nce_a = self.cpc_za(acoustic, fusion)
