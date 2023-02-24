@@ -145,7 +145,7 @@ class MMIM(nn.Module):
         # Linear proj and pred
         
         fusion, preds = self.fusion_prj(torch.cat([text, acoustic, visual], dim=1))
-        pred = self.softdectree(fusion)
+        preds = self.softdectree(fusion)
 
 
 #         print("-------------")
